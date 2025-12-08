@@ -6,34 +6,22 @@ const db = require('./config/db.js');
 
 dotenv.config();
 
-// -------------------------
-// EXPRESS + SOCKET.IO SETUP
-// -------------------------
+
 const app = express();
 const http = require("http").createServer(app);
 const { Server } = require("socket.io");
 
 const io = new Server(http, {
   cors: {
-    origin: [
-      "http://localhost:5173",
-      "http://localhost:5174",
-      "https://aspire-beauty-dashboard-front-end.vercel.app",
-      "https://aspire-beauty-fornt-end.vercel.app",
-      "https://beauty.aspireths.com"
-    ],
+    origin: ['http://localhost:5173', 'http://localhost:5174', 'https://aspire-beauty-dashboard-front-end.vercel.app'],
     credentials: true,
-    methods: ["GET", "POST"]
   },
 });
-
 
 // Attach io globally (to use inside controllers)
 global.io = io;
 
-// -------------------------
-// SOCKET.IO CONNECTION
-// -------------------------
+
 io.on("connection", (socket) => {
   console.log("⚡ Client connected:", socket.id);
 
@@ -42,26 +30,15 @@ io.on("connection", (socket) => {
   });
 });
 
-// -------------------------
-// CORS
-// -------------------------
-const allowedOrigins = [
-  "http://localhost:5173",
-  "http://localhost:5174",
-  "https://aspire-beauty-dashboard-front-end.vercel.app",
-  "https://aspire-beauty-fornt-end.vercel.app",
-  "https://beauty.aspireths.com"
-];
 
+const allowedOrigins = ['http://localhost:5173', 'http://localhost:5174'];
 
 app.use(cors({
   origin: allowedOrigins,
   credentials: true,
 }));
 
-// -------------------------
-// Test DB connection
-// -------------------------
+
 (async () => {
   try {
     const connection = await db.getConnection();
@@ -72,15 +49,11 @@ app.use(cors({
   }
 })();
 
-// -------------------------
-// Middleware
-// -------------------------
+
 app.use(express.json());
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-// -------------------------
-// ROUTES
-// -------------------------
+
 const categoryRoutes = require('./routes/categoryRoutes');
 const subcategoryRoutes = require('./routes/subcategoryRoutes');
 const productRoutes = require('./routes/productRoutes');
@@ -97,14 +70,12 @@ app.use("/api/banner", bannerRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/users', userRoutes);
 
-// Default
+
 app.get('/', (req, res) => {
   res.json({ message: "server is running" });
 });
 
-// -------------------------
-// START SERVER
-// -------------------------
+
 const PORT = process.env.PORT || 5001;
 
 http.listen(PORT, () => {
