@@ -21,7 +21,7 @@ exports.placeOrder = async (req, res) => {
     totalAmount 
   } = req.body;
 
-  console.log("Incoming Order Body:", req.body);
+ 
 
   let connection;
 
@@ -68,16 +68,7 @@ exports.placeOrder = async (req, res) => {
           item.image1 || item.imageUrl,
         ]
       );
-    }
-
-    for (let item of items) {
-      await connection.query(
-  `UPDATE ab_products
-   SET stock = GREATEST(stock - ?, 0)
-   WHERE id = ?`,
-  [item.quantity, item.id]
-);
-    }
+    }  
 
     await connection.commit();
 
@@ -147,30 +138,57 @@ exports.getOrderById = async (req, res) => {
   try {
     const orderId = req.params.id;
 
-    const [orders] = await pool.query(`SELECT * FROM ab_orders WHERE id = ?`, [orderId]);
+    const [orders] = await pool.query(
+      `SELECT * FROM ab_orders WHERE id = ?`,
+      [orderId]
+    );
 
     if (orders.length === 0) {
-      return res.status(404).json({ success: false, message: "Order not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Order not found"
+      });
     }
 
     const [itemsRows] = await pool.query(
-      `SELECT * FROM ab_order_items WHERE orderId = ?`,
+      `SELECT 
+          oi.id,
+          oi.productId,
+          oi.productName,
+          oi.price,
+          oi.quantity,
+          oi.itemStatus,
+          oi.imageUrl,
+          p.stock AS productStock,
+          p.image1 AS productImage
+       FROM ab_order_items oi
+       LEFT JOIN ab_products p ON oi.productId = p.id
+       WHERE oi.orderId = ?`,
       [orderId]
     );
+
+    const formattedItems = itemsRows.map((item) => ({
+      ...item,
+      productImage: item.productImage
+    }));
 
     return res.json({
       success: true,
       order: {
         ...orders[0],
-        items: itemsRows
+        items: formattedItems
       }
     });
 
   } catch (error) {
-    console.error("getOrderById error:", error);
-    return res.status(500).json({ success: false, message: "Server error" });
+    console.error("🔥 RAW SQL ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
   }
 };
+
 
 // ======================== UPDATE ORDER STATUS =========================
 exports.updateOrderStatus = async (req, res) => {
@@ -178,13 +196,59 @@ exports.updateOrderStatus = async (req, res) => {
     const orderId = req.params.id;
     const { status } = req.body;
 
-    
-
     const valid = ["Pending", "Confirmed", "Shipped", "Delivered", "Cancelled"];
     if (!valid.includes(status)) {
       return res.status(400).json({ success: false, message: "Invalid status" });
     }
 
+    // 1️⃣ Fetch existing order info (to check previous status)
+    const [[order]] = await pool.query(
+      `SELECT orderStatus FROM ab_orders WHERE id = ?`,
+      [orderId]
+    );
+
+    if (!order) {
+      return res.status(404).json({ success: false, message: "Order not found" });
+    }
+
+    const previousStatus = order.orderStatus;
+
+    // 2️⃣ Only reduce stock when transitioning:
+    // Pending → Confirmed   or
+    // Pending → Shipped     or
+    // Confirmed → Shipped
+    let shouldReduceStock = false;
+
+    if (previousStatus === "Pending" && (status === "Confirmed" || status === "Shipped")) {
+      shouldReduceStock = true;
+    }
+
+    if (previousStatus === "Confirmed" && status === "Shipped") {
+      shouldReduceStock = true;
+    }
+
+    // ❌ Shipped → Delivered (NO stock change)
+    // ❌ Cancelled (NO stock change)
+    // ❌ Confirmed → Pending (NO stock change)
+
+    // 3️⃣ Fetch order items only if needed
+    if (shouldReduceStock) {
+      const [items] = await pool.query(
+        `SELECT productId, quantity FROM ab_order_items WHERE orderId = ?`,
+        [orderId]
+      );
+
+      for (let item of items) {
+        await pool.query(
+          `UPDATE ab_products
+           SET stock = GREATEST(stock - ?, 0)
+           WHERE id = ?`,
+          [item.quantity, item.productId]
+        );
+      }
+    }
+
+    // 4️⃣ Update the order status
     await pool.query(`UPDATE ab_orders SET orderStatus = ? WHERE id = ?`, [
       status,
       orderId
@@ -202,6 +266,8 @@ exports.updateOrderStatus = async (req, res) => {
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
+
+
 
 // ======================== GET ORDERS BY USER =========================
 exports.getOrdersByUserId = async (req, res) => {
@@ -238,6 +304,107 @@ exports.getOrdersByUserId = async (req, res) => {
 
   } catch (error) {
     console.error("getOrdersByUserId error:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+
+
+
+// ======================== UPDATE ORDER ITEM STATUS =========================
+exports.updateOrderItemStatus = async (req, res) => {
+  try {
+    const itemId = req.params.itemId;
+    const { itemStatus } = req.body;
+
+    const valid = ["Pending", "Confirmed", "Shipped", "Delivered", "Cancelled"];
+    if (!valid.includes(itemStatus)) {
+      return res.status(400).json({ success: false, message: "Invalid item status" });
+    }
+
+    const [result] = await pool.query(
+      `UPDATE ab_order_items SET itemStatus = ? WHERE id = ?`,
+      [itemStatus, itemId]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ success: false, message: "Item not found" });
+    }
+
+    return res.json({
+      success: true,
+      message: "Item status updated",
+      itemId: Number(itemId),
+      itemStatus
+    });
+
+  } catch (error) {
+    console.error("updateOrderItemStatus error:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+
+
+// ======================== UPDATE ORDER ITEM STATUS =========================
+exports.updateOrderItemStatus = async (req, res) => {
+  try {
+    const itemId = req.params.itemId;
+    const { itemStatus } = req.body;
+
+    const valid = ["Pending", "Confirmed", "Shipped", "Delivered", "Cancelled"];
+    if (!valid.includes(itemStatus)) {
+      return res.status(400).json({ success: false, message: "Invalid item status" });
+    }
+
+    // 1️⃣ Fetch existing item info
+    const [[item]] = await pool.query(
+      `SELECT productId, quantity, itemStatus FROM ab_order_items WHERE id = ?`,
+      [itemId]
+    );
+
+    if (!item) {
+      return res.status(404).json({ success: false, message: "Item not found" });
+    }
+
+    const previous = item.itemStatus;
+
+    // 2️⃣ Determine if stock should reduce
+    let shouldReduce = false;
+
+    if (previous === "Pending" && (itemStatus === "Confirmed" || itemStatus === "Shipped")) {
+      shouldReduce = true;
+    }
+
+    if (previous === "Confirmed" && itemStatus === "Shipped") {
+      shouldReduce = false;
+    }
+
+    // 3️⃣ Reduce stock if needed
+    if (shouldReduce) {
+      await pool.query(
+        `UPDATE ab_products
+         SET stock = GREATEST(stock - ?, 0)
+         WHERE id = ?`,
+        [item.quantity, item.productId]
+      );
+    }
+
+    // 4️⃣ Update item status
+    const [result] = await pool.query(
+      `UPDATE ab_order_items SET itemStatus = ? WHERE id = ?`,
+      [itemStatus, itemId]
+    );
+
+    return res.json({
+      success: true,
+      message: "Item status updated",
+      itemId: Number(itemId),
+      itemStatus
+    });
+
+  } catch (error) {
+    console.error("updateOrderItemStatus error:", error);
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
