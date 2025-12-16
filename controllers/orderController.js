@@ -4,24 +4,22 @@ dotenv.config();
 
 // ======================== PLACE ORDER =========================
 exports.placeOrder = async (req, res) => {
-  const { 
-    userid, 
-    fullName, 
-    phone, 
-    email, 
-    address, 
-    city, 
+  const {
+    userid,
+    fullName,
+    phone,
+    email,
+    address,
+    city,
     state,
     landmark,
     addressType,
-    pincode, 
+    pincode,
     latitude,
     longitude,
-    items, 
-    totalAmount 
+    items,
+    totalAmount
   } = req.body;
-
- 
 
   let connection;
 
@@ -29,11 +27,11 @@ exports.placeOrder = async (req, res) => {
     connection = await pool.getConnection();
     await connection.beginTransaction();
 
-    // ✅ Insert into orders with all new fields
+    // 1️⃣ Insert order
     const [orderResult] = await connection.query(
-      `INSERT INTO ab_orders 
+      `INSERT INTO ab_orders
       (userid, fullName, phone, email, address, city, state, landmark, addressType, pincode, latitude, longitude, totalAmount)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         userid,
         fullName,
@@ -53,35 +51,50 @@ exports.placeOrder = async (req, res) => {
 
     const orderId = orderResult.insertId;
 
-    // ✅ Insert each order item
-    for (let item of items) {
+    // 2️⃣ Insert order items (✅ VARIANT SAFE)
+    for (const item of items) {
+
+       if (!item.productId) {
+    throw new Error("productId missing in order item");
+  }
+
+
+   if (!item.productName) {
+    throw new Error("productName missing in order item");
+  }
+
       await connection.query(
-        `INSERT INTO ab_order_items 
-         (orderId, productId, productName, price, quantity, imageUrl)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [
-          orderId,
-          item.id,
-          item.name,
-          item.price,
-          item.quantity,
-          item.image1 || item.imageUrl,
-        ]
-      );
-    }  
+  `INSERT INTO ab_order_items
+   (orderId, productId, variantId, variantName, variantImage, productName, price, quantity, productImage)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  [
+    orderId,
+    item.productId,       // ✅ use frontend key
+    item.variantId || null,
+    item.variantName || null,
+    item.variantImage || null,
+    item.productName,     // ✅ use frontend key
+    item.price,
+    item.quantity,
+    item.productImage || null   // ✅ use frontend key
+  ]
+);
+
+    }
 
     await connection.commit();
 
     res.json({ success: true, orderId });
 
-  } catch (err) {
-    console.error("placeOrder error:", err);
+  } catch (error) {
+    console.error("placeOrder error:", error);
     if (connection) await connection.rollback();
     res.status(500).json({ success: false, message: "Order failed" });
   } finally {
     if (connection) connection.release();
   }
 };
+
 
 
 // ======================== GET ALL ORDERS =========================

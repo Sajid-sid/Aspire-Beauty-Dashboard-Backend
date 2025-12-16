@@ -67,6 +67,10 @@ const adminRoutes = require('./routes/adminRoutes');
 const userRoutes = require('./routes/userRoutes');
 const bannerRoutes = require('./routes/bannerRoutes');
 const orderRoutes = require('./routes/orderRoutes');
+const variantRoutes = require("./routes/variantRoutes");
+const stockRoutes = require("./routes/stockRoutes");
+const productDetailsRoutes = require("./routes/productDetailsRoutes");
+
 
 app.use("/api/categories", categoryRoutes);
 app.use("/api/subcategories", subcategoryRoutes);
@@ -75,6 +79,9 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/banner", bannerRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/users', userRoutes);
+app.use("/api/variants", variantRoutes);
+app.use("/api/stock", stockRoutes);
+app.use("/api/product-details", productDetailsRoutes);
 
 
 app.get('/', (req, res) => {
