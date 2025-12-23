@@ -17,9 +17,19 @@ exports.addVariant = async (req, res) => {
     const ProductImage = productImage ? `${BASE_URL}${productImage}` : null;
 
     const [result] = await pool.query(
-      `INSERT INTO ab_stock (productid, varient, price, varient_image, product_image, stock, pending, confirmed)
-       VALUES (?, ?, ?, ?, ?, 0, 0)`,
-      [productid, varient, VariantImage, price, ProductImage, stock || 0]
+      `INSERT INTO ab_stock 
+      (productid, varient, price, varient_image, product_image, stock, pending, confirmed)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        productid,
+        varient,
+        price || 0,
+        VariantImage,
+        ProductImage,
+        stock || 0,
+        0, // pending
+        0  // confirmed
+      ]
     );
 
     res.json({ message: "Variant added successfully", stockId: result.insertId });
@@ -28,6 +38,7 @@ exports.addVariant = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
 
 // Get All Variants
 exports.getAllVariants = async (req, res) => {
